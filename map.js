@@ -1,10 +1,7 @@
-// Import D3 for data processing
 import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm';
 
-// Set up Mapbox access token
 mapboxgl.accessToken = 'pk.eyJ1Ijoib21pZGFsYW0wMSIsImEiOiJjbTdmYnkwYjYwbzAzMmxvb3c5enp1YXlhIn0.NbClYD0yoCdoflg9rGzJKg';
 
-// Initialize the Mapbox map
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
@@ -16,13 +13,13 @@ const map = new mapboxgl.Map({
 
 let stations, trips, circles;
 
-// Function to format time
 function formatTime(minutes) {
     const date = new Date(0, 0, 0, 0, minutes);
     return date.toLocaleString('en-US', { timeStyle: 'short' });
 }
 
-// Function to compute station traffic
+let stationFlow = d3.scaleQuantize().domain([0, 1]).range([0, 0.5, 1]);
+
 function computeStationTraffic(stations, trips) {
     const departures = d3.rollup(
         trips,
@@ -45,14 +42,12 @@ function computeStationTraffic(stations, trips) {
     });
 }
 
-// Function to convert lat/lon to pixel coordinates
 function getCoords(station) {
     const point = new mapboxgl.LngLat(+station.lon, +station.lat);
     const { x, y } = map.project(point);
     return { cx: x, cy: y };
 }
 
-// Function to filter trips by time
 function filterTripsByTime(trips, timeFilter) {
     return timeFilter === -1
         ? trips
@@ -67,7 +62,6 @@ function filterTripsByTime(trips, timeFilter) {
 }
 
 map.on('load', async () => {
-    // Load bike lane data
     map.addSource('boston_route', {
         type: 'geojson',
         data: 'https://bostonopendata-boston.opendata.arcgis.com/datasets/boston::existing-bike-network-2022.geojson'
@@ -90,11 +84,9 @@ map.on('load', async () => {
         paint: { 'line-color': '#32D400', 'line-width': 5, 'line-opacity': 0.6 }
     });
 
-    // Load station data
     let jsonData = await d3.json('https://dsc106.com/labs/lab07/data/bluebikes-stations.json');
     stations = jsonData.data.stations;
 
-    // Load trip data
     trips = await d3.csv('https://dsc106.com/labs/lab07/data/bluebikes-traffic-2024-03.csv', (trip) => {
         trip.started_at = new Date(trip.started_at);
         trip.ended_at = new Date(trip.ended_at);
@@ -103,7 +95,6 @@ map.on('load', async () => {
 
     stations = computeStationTraffic(stations, trips);
 
-    // Add SVG overlay for circles
     const container = d3.select('#map').node();
     const svg = d3.select(container)
         .append('svg')
@@ -126,7 +117,8 @@ map.on('load', async () => {
         .attr('stroke', 'white')
         .attr('stroke-width', 1)
         .attr('opacity', 0.6)
-        .attr('r', (d) => radiusScale(d.totalTraffic));
+        .attr('r', (d) => radiusScale(d.totalTraffic))
+        .style('--departure-ratio', (d) => stationFlow(d.departures / d.totalTraffic));
 
     function updatePositions() {
         circles.attr('cx', (d) => getCoords(d).cx)
@@ -141,7 +133,8 @@ map.on('load', async () => {
 
         circles.data(filteredStations, (d) => d.short_name)
             .join('circle')
-            .attr('r', (d) => radiusScale(d.totalTraffic));
+            .attr('r', (d) => radiusScale(d.totalTraffic))
+            .style('--departure-ratio', (d) => stationFlow(d.departures / d.totalTraffic));
     }
 
     updatePositions();
